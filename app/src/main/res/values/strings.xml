@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">The Eyes</string>
+    <string name="app_name">AI Vision</string>
     <string name="title_activity_settings">SettingsActivity</string>
     <string name="action_settings">Settings</string>
     <!-- Preference Titles -->

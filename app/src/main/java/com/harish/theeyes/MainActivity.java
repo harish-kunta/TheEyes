@@ -4,7 +4,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraX;
+import androidx.camera.core.FlashMode;
 import androidx.camera.core.ImageAnalysis;
+
 import androidx.camera.core.ImageAnalysisConfig;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageCaptureConfig;
@@ -38,6 +40,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.concurrent.TimeUnit;
@@ -60,13 +63,15 @@ import retrofit2.http.Part;
 
 import android.preference.PreferenceManager;
 
+import com.google.gson.Gson;
+
 
 public class MainActivity extends AppCompatActivity {
 
     private int REQUEST_CODE_PERMISSIONS = 10; //arbitrary number, can be changed accordingly
     private final String[] REQUIRED_PERMISSIONS = new String[]{"android.permission.CAMERA", "android.permission.WRITE_EXTERNAL_STORAGE"}; //array w/ permissions from manifest
     TextureView txView;
-
+    boolean flashMode;
     private static final String TAG = MainActivity.class.getSimpleName();
 
     @Override
@@ -75,6 +80,16 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         txView = findViewById(R.id.view_finder);
+
+        SharedPreferences sharedPrefs = PreferenceManager
+                .getDefaultSharedPreferences(MainActivity.this);
+        sharedPrefs.registerOnSharedPreferenceChangeListener(new SharedPreferences.OnSharedPreferenceChangeListener() {
+            @Override
+            public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+                flashMode = sharedPreferences.getBoolean("enable_flash", false);
+                Log.e(TAG, "Value:" + flashMode);
+            }
+        });
 
         if (allPermissionsGranted()) {
             startCamera(); //start camera if permission has been granted by user
@@ -114,27 +129,39 @@ public class MainActivity extends AppCompatActivity {
         /* image capture */
 
         //config obj, selected capture mode
-        ImageCaptureConfig imgCapConfig = new ImageCaptureConfig.Builder().setCaptureMode(ImageCapture.CaptureMode.MIN_LATENCY)
+        ImageCaptureConfig imgCapConfig = new ImageCaptureConfig.Builder().setFlashMode(flashMode?FlashMode.ON:FlashMode.OFF).setCaptureMode(ImageCapture.CaptureMode.MIN_LATENCY)
                 .setTargetRotation(getWindowManager().getDefaultDisplay().getRotation()).build();
         final ImageCapture imgCap = new ImageCapture(imgCapConfig);
 
         findViewById(R.id.view_finder).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                File file = new File(Environment.getExternalStorageDirectory() + "/" + System.currentTimeMillis() + ".jpg");
+//                File file = new File(Environment.getExternalStorageDirectory() + "/"+"AIVision"+"/" + System.currentTimeMillis() + ".jpg");
+
+                File direct = new File(Environment.getExternalStorageDirectory() + "/AIVision");
+
+                if (!direct.exists()) {
+                    File wallpaperDirectory = new File("/sdcard/AIVision/");
+                    wallpaperDirectory.mkdirs();
+                }
+
+                File file = new File("/sdcard/AIVision/",  System.currentTimeMillis() + ".jpg");
+
                 imgCap.takePicture(file, new ImageCapture.OnImageSavedListener() {
                     @Override
                     public void onImageSaved(@NonNull File file) {
-
                         String msg = "Photo capture succeeded: " + file.getAbsolutePath();
                         uploadToServer(file);
-                        Toast.makeText(getBaseContext(), msg, Toast.LENGTH_LONG).show();
+
+                        Log.e(TAG, msg);
                     }
 
                     @Override
                     public void onError(@NonNull ImageCapture.UseCaseError useCaseError, @NonNull String message, @Nullable Throwable cause) {
                         String msg = "Photo capture failed: " + message;
                         Toast.makeText(getBaseContext(), msg, Toast.LENGTH_LONG).show();
+
+                        Log.e(TAG, msg);
                         if (cause != null) {
                             cause.printStackTrace();
                         }
@@ -229,17 +256,22 @@ public class MainActivity extends AppCompatActivity {
             public void onResponse(Call<ResponseBody> call, retrofit2.Response<ResponseBody> response) {
 
                 if (response.isSuccessful()) {
-                    Log.e(TAG, response.body().toString());
+                    Log.e(TAG, new Gson().toJson(response.body()));
                     String prediction = "";
-                    String json = response.message().toString();
-                    try {
-                        JSONObject jsonObj = new JSONObject(json);
-                        prediction = jsonObj.get("response").toString();
-                    } catch (JSONException e) {
+
+                    if (response.body()!=null){
+                        prediction = response.toString();
+                    } else {
                         prediction = "Something went wrong! Please try again";
                     }
                     progressDialog.dismiss();
                     Toast.makeText(getBaseContext(), prediction, Toast.LENGTH_LONG).show();
+                    Log.e(TAG, prediction);
+                }
+                else
+                {
+                    progressDialog.dismiss();
+                    Toast.makeText(getBaseContext(),"Something went wrong! Please try again" , Toast.LENGTH_LONG).show();
                 }
 
             }
