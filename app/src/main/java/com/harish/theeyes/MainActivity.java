@@ -25,6 +25,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Matrix;
 import android.os.Bundle;
 import android.os.Environment;
+import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.util.Rational;
 import android.util.Size;
@@ -36,13 +37,16 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.w3c.dom.Text;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
@@ -71,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private int REQUEST_CODE_PERMISSIONS = 10; //arbitrary number, can be changed accordingly
     private final String[] REQUIRED_PERMISSIONS = new String[]{"android.permission.CAMERA", "android.permission.WRITE_EXTERNAL_STORAGE"}; //array w/ permissions from manifest
     TextureView txView;
+    TextToSpeech textToSpeech;
     boolean flashMode;
     private static final String TAG = MainActivity.class.getSimpleName();
 
@@ -90,7 +95,18 @@ public class MainActivity extends AppCompatActivity {
                 Log.e(TAG, "Value:" + flashMode);
             }
         });
+        // create an object textToSpeech and adding features into it
+        textToSpeech = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int i) {
 
+                // if No error is found then only it will run
+                if(i!=TextToSpeech.ERROR){
+                    // To Choose language of speech
+                    textToSpeech.setLanguage(Locale.US);
+                }
+            }
+        });
         if (allPermissionsGranted()) {
             startCamera(); //start camera if permission has been granted by user
         } else {
@@ -190,19 +206,19 @@ public class MainActivity extends AppCompatActivity {
     public interface UploadAPIs {
         @Multipart
         @POST("mobile")
-        Call<ResponseBody> uploadImage(@Header("accept") String type, @Part MultipartBody.Part file1);
+        Call<Result> uploadImage(@Header("accept") String type, @Part MultipartBody.Part file1);
     }
 
     public static class NetworkClient {
         private static SharedPreferences prefs;
-        String name = prefs.getString("", "");
         private static String BASE_URL = "";
         private static Retrofit retrofit;
 
         public static Retrofit getRetrofitClient(Context context) {
             prefs = PreferenceManager.getDefaultSharedPreferences(context);
-            BASE_URL = prefs.getString("signature", "http://127.0.0.1:5000/");
-
+            BASE_URL = prefs.getString("signature","");
+            Toast.makeText(context,BASE_URL,Toast.LENGTH_LONG).show();
+            Log.e(TAG,BASE_URL);
             if (BASE_URL.isEmpty()) {
 
                 Toast.makeText(context, "Please set the http URL in settings page", Toast.LENGTH_LONG).show();
@@ -249,36 +265,40 @@ public class MainActivity extends AppCompatActivity {
         MultipartBody.Part part1 = MultipartBody.Part.createFormData("image", file.getName(), fileReqBody1);
 
 
-        Call<ResponseBody> call = uploadAPIs.uploadImage("application/json", part1);
-        call.enqueue(new Callback<ResponseBody>() {
+        Call<Result> call = uploadAPIs.uploadImage("application/json", part1);
+        call.enqueue(new Callback<Result>() {
 
             @Override
-            public void onResponse(Call<ResponseBody> call, retrofit2.Response<ResponseBody> response) {
+            public void onResponse(Call<Result> call, retrofit2.Response<Result> response) {
 
                 if (response.isSuccessful()) {
-                    Log.e(TAG, new Gson().toJson(response.body()));
                     String prediction = "";
-
                     if (response.body()!=null){
-                        prediction = response.toString();
+                        JSONObject jsonObject = null;
+
+                        prediction = response.body().getResponse();
+                        
                     } else {
                         prediction = "Something went wrong! Please try again";
                     }
                     progressDialog.dismiss();
                     Toast.makeText(getBaseContext(), prediction, Toast.LENGTH_LONG).show();
+                    textToSpeech.speak(prediction,TextToSpeech.QUEUE_FLUSH,null);
                     Log.e(TAG, prediction);
                 }
                 else
                 {
                     progressDialog.dismiss();
-                    Toast.makeText(getBaseContext(),"Something went wrong! Please try again" , Toast.LENGTH_LONG).show();
+                    String prediction = "Something went wrong! Please try again";
+                    Toast.makeText(getBaseContext(),prediction , Toast.LENGTH_LONG).show();
+                    textToSpeech.speak(prediction,TextToSpeech.QUEUE_FLUSH,null);
                 }
 
             }
 
 
             @Override
-            public void onFailure(Call call, Throwable t) {
+            public void onFailure(Call<Result> call, Throwable t) {
                 progressDialog.dismiss();
                 t.printStackTrace();
                 Log.e(TAG, t.getMessage());
